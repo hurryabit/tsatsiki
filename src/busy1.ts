@@ -15,17 +15,19 @@ type Cell = {
     verified_at: Revision;
 }
 
-type DatabaseReader = (name: string, key: string) => unknown;
+type DatabaseReader = {
+    get_value: (name: string, key: string) => unknown;
+}
 
 type Rule = (reader: DatabaseReader, key: string) => unknown
 
 function with_trace(reader: DatabaseReader): [DatabaseReader, Query[]] {
     const trace: Query[] = [];
-    const traced_reader = (name: string, key: string) => {
+    const get_value = (name: string, key: string) => {
         trace.push({ name, key });
-        return reader(name, key);
+        return reader.get_value(name, key);
     }
-    return [traced_reader, trace];
+    return [{get_value}, trace];
 }
 
 export class Database {
@@ -94,12 +96,12 @@ export class Database {
 
     add_input(name: string): void {
         this.rules[name] = null;
-        this.cells[name] = this.cells[name] ?? {};
+        this.cells[name] = {};
     }
 
     add_rule(name: string, rule: Rule): void {
         this.rules[name] = rule;
-        this.cells[name] = this.cells[name] ?? {};
+        this.cells[name] = {};
     }
 
     set_value(name: string, key: string, value: unknown): void {
@@ -120,6 +122,6 @@ export class Database {
     }
 
     get_reader(): DatabaseReader {
-        return (name, key) => this.get_value(name, key);
+        return {get_value: (name, key) => this.get_value(name, key)};
     }
 }
