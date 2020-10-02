@@ -1,25 +1,39 @@
-type Spec = {
-    x: number;
-    y: string;
+import * as Untyped from './busy1';
+
+type AnySpec = {[name: string]: unknown}
+
+type Getter<Spec extends AnySpec> =
+    <Name extends keyof Spec>(name: Name, key: string) => Spec[Name]
+
+type Setter<Spec extends AnySpec> =
+    <Name extends keyof Spec>(name: Name, key: string, value: Spec[Name]) => void
+
+type DatabaseReader<Inputs extends AnySpec, Rules extends AnySpec> = {
+    get_value: Getter<Inputs & Rules>;
 }
 
-type Inputs = {
-    manifest: string[];
-    source_text: string;
+type DatabaseWriter<Inputs extends AnySpec> = {
+    set_value: Setter<Inputs>
 }
 
-type Rules = {
-    ast: string;
-    program_ast: string[];
+export type Database<Inputs extends AnySpec, Rules extends AnySpec> =
+    DatabaseReader<Inputs, Rules> & DatabaseWriter<Inputs>
+
+export type RulesDecl<Inputs extends AnySpec, Rules extends AnySpec> = {
+    [Name in keyof Rules]: (db: DatabaseReader<Inputs, Rules>, key: string) => Rules[Name];
 }
 
-type Getters<Name extends string, Spec extends {[name in Name]: unknown}> =
-    Name extends string ? (name: Name, key: string) => Spec[Name] : never
+export function Database<Inputs extends AnySpec, Rules extends AnySpec>(
+    inputs: Inputs,
+    rules: RulesDecl<Inputs, Rules>,
+): Database<Inputs, Rules> {
+    const db = new Untyped.Database();
 
-type Setters<Name extends string, Spec extends {[name in Name]: unknown}> =
-    Name extends string ? (name: Name, key: string, value: Spec[Name]) => void : never
-
-type X = {
-    get_value: Getters<keyof (Inputs & Rules), Inputs & Rules>;
-    sey_value: Setters<keyof Inputs, Inputs>;
+    for (const name in inputs) {
+        db.add_input(name);
+    }
+    for (const name in rules) {
+        db.add_rule(name, rules[name] as Untyped.Rule);
+    }
+    return db as Database<Inputs, Rules>;
 }

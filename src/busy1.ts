@@ -19,7 +19,7 @@ type DatabaseReader = {
     get_value: (name: string, key: string) => unknown;
 }
 
-type Rule = (reader: DatabaseReader, key: string) => unknown
+export type Rule = (reader: DatabaseReader, key: string) => unknown
 
 function with_trace(reader: DatabaseReader): [DatabaseReader, Query[]] {
     const trace: Query[] = [];
@@ -30,7 +30,7 @@ function with_trace(reader: DatabaseReader): [DatabaseReader, Query[]] {
     return [{get_value}, trace];
 }
 
-export class Database {
+export class Database implements DatabaseReader {
     rules: { [name: string]: Rule | null } = {};
     cells: { [name: string]: { [key: string]: Cell } } = {};
     currently_at: Revision = 0;
