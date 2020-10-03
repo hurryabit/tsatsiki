@@ -1,62 +1,62 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import deepEqual from 'deep-equal';
 
-type Query = {
-    readonly name: string;
+export type DatabaseReader = {
+    get_value: (layer: string, key: string) => unknown;
+}
+
+export type Derivation = (reader: DatabaseReader, key: string) => unknown
+
+type NodeId = {
+    readonly layer: string;
     readonly key: string;
 }
 
 type Revision = number
 
-type Cell = {
+type Node = {
     value: unknown;
-    dependencies: Query[];
+    dependencies: NodeId[];
     changed_at: Revision;
     verified_at: Revision;
 }
 
-type DatabaseReader = {
-    get_value: (name: string, key: string) => unknown;
-}
-
-export type Rule = (reader: DatabaseReader, key: string) => unknown
-
 export class Database implements DatabaseReader {
-    rules: { [name: string]: Rule | null } = {};
-    cells: { [name: string]: { [key: string]: Cell } } = {};
+    derivations: { [layer: string]: Derivation | null } = {};
+    nodes: { [layer: string]: { [key: string]: Node } } = {};
     current_revision: Revision = 0;
 
-    private get_traced_reader(): {reader: DatabaseReader, trace: Query[]} {
-        const trace: Query[] = [];
-        const get_value = (name: string, key: string) => {
-            trace.push({ name, key });
-            return this.get_value(name, key);
+    private get_traced_reader(): {reader: DatabaseReader, trace: NodeId[]} {
+        const trace: NodeId[] = [];
+        const get_value = (layer: string, key: string) => {
+            trace.push({ layer, key });
+            return this.get_value(layer, key);
         }
         return {reader: {get_value}, trace};
     }
 
-    private eval_cell({name, key}: Query): Cell {
-        const rule = this.rules[name];
-        const cell = this.cells[name][key];
+    private eval_cell({layer, key}: NodeId): Node {
+        const rule = this.derivations[layer];
+        const cell = this.nodes[layer][key];
 
         if (rule === undefined) {
             // An unknown node type.
-            throw Error(`Getting value for undefined rule ${name}.`);
+            throw Error(`Getting value for undefined rule ${layer}.`);
         }
 
         if (rule === null) {
             // An input node.
             if (cell === undefined) {
-                throw Error(`Getting value for unset input ${name}/${key}.`);
+                throw Error(`Getting value for unset input ${layer}/${key}.`);
             }
-            console.log(`Accessing input ${name}/${key}.`)
+            console.log(`Accessing input ${layer}/${key}.`)
             cell.verified_at = this.current_revision;
             return cell;
         }
 
         if (cell === undefined) {
             // A derived node that is computed for the first time.
-            console.log(`Evaluating ${name}/${key} for the first time...`);
+            console.log(`Evaluating ${layer}/${key} for the first time...`);
             const {reader, trace} = this.get_traced_reader();
             const value = rule(reader, key);
             const cell = {
@@ -65,14 +65,14 @@ export class Database implements DatabaseReader {
                 changed_at: this.current_revision,
                 verified_at: this.current_revision,
             };
-            this.cells[name][key] = cell;
-            console.log(`Evaluated ${name}/${key}.`);
+            this.nodes[layer][key] = cell;
+            console.log(`Evaluated ${layer}/${key}.`);
             return cell;
         }
 
         if (cell.verified_at === this.current_revision) {
             // A derived node that has already been verified since the last change.
-            console.log(`Taking ${name}/${key} from cache because is has been verified already.`)
+            console.log(`Taking ${layer}/${key} from cache because is has been verified already.`)
             return cell;
         }
 
@@ -88,13 +88,13 @@ export class Database implements DatabaseReader {
 
         if (!inputs_changed) {
             // A derived node whose inputs have not changed.
-            console.log(`Taking ${name}/${key} from cache because the inputs are unchanged.`);
+            console.log(`Taking ${layer}/${key} from cache because the inputs are unchanged.`);
             cell.verified_at = this.current_revision;
             return cell;
         }
 
         // A derived node whose inputs have changed.
-        console.log(`Re-evaluating ${name}/${key}...`);
+        console.log(`Re-evaluating ${layer}/${key}...`);
         const {reader, trace} = this.get_traced_reader();
         const value = rule(reader, key);
         cell.dependencies = trace;
@@ -102,32 +102,32 @@ export class Database implements DatabaseReader {
 
         if (deepEqual(value, cell.value, {strict: true})) {
             // A derived node whose value has not changed.
-            console.log(`Taking ${name}/${key} from cache because the value is unchanged.`);
+            console.log(`Taking ${layer}/${key} from cache because the value is unchanged.`);
             return cell;
         }
 
         // A derived node whose value has changed.
         cell.value = value;
         cell.changed_at = this.current_revision;
-        console.log(`Evaluated ${name}/${key}.`);
+        console.log(`Evaluated ${layer}/${key}.`);
         return cell;
     }
 
-    add_input(name: string): void {
-        this.rules[name] = null;
-        this.cells[name] = {};
+    add_input(layer: string): void {
+        this.derivations[layer] = null;
+        this.nodes[layer] = {};
     }
 
-    add_rule(name: string, rule: Rule): void {
-        this.rules[name] = rule;
-        this.cells[name] = {};
+    add_rule(layer: string, rule: Derivation): void {
+        this.derivations[layer] = rule;
+        this.nodes[layer] = {};
     }
 
-    set_value(name: string, key: string, value: unknown): void {
-        const cell = this.cells[name][key];
+    set_value(layer: string, key: string, value: unknown): void {
+        const cell = this.nodes[layer][key];
         if (cell === undefined || !deepEqual(value, cell.value, {strict: true})) {
             this.current_revision += 1;
-            this.cells[name][key] = {
+            this.nodes[layer][key] = {
                 value: value,
                 dependencies: [],
                 changed_at: this.current_revision,
@@ -136,7 +136,7 @@ export class Database implements DatabaseReader {
         }
     }
 
-    get_value(name: string, key: string): unknown {
-        return this.eval_cell({name, key}).value;
+    get_value(layer: string, key: string): unknown {
+        return this.eval_cell({layer, key}).value;
     }
 }
