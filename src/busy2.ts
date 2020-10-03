@@ -19,19 +19,15 @@ type DatabaseWriter<Inputs extends TypesSpec> = {
 export type Database<Inputs extends TypesSpec, Derivations extends TypesSpec> =
     DatabaseReader<Inputs, Derivations> & DatabaseWriter<Inputs>
 
-export type InputsSpec<Inputs extends TypesSpec> = Record<keyof Inputs, unknown>
-
-export type DerivationsSpec<Inputs extends TypesSpec, Derivations extends TypesSpec> = {
-    [Name in keyof Derivations]: (db: DatabaseReader<Inputs, Derivations>, key: string) => Derivations[Name];
+export type DatabaseSpec<Inputs extends TypesSpec, Derivations extends TypesSpec> = {
+    [Layer in keyof Inputs | keyof Derivations]:
+        Layer extends keyof Derivations
+        ? (db: DatabaseReader<Inputs, Derivations>, key: string) => Derivations[Layer]
+        : null;
 }
 
 export function Database<Inputs extends TypesSpec, Derivations extends TypesSpec>(
-    inputs: InputsSpec<Inputs>,
-    derivations: DerivationsSpec<Inputs, Derivations>,
+    spec: DatabaseSpec<Inputs, Derivations>,
 ): Database<Inputs, Derivations> {
-    const inputs_spec = {} as Record<keyof Inputs, null>;
-    for (const layer in inputs) {
-        inputs_spec[layer] = null;
-    }
-    return new Untyped.Database({...inputs_spec, ...derivations}) as Database<Inputs, Derivations>;
+    return new Untyped.Database(spec as Untyped.DatabaseSpec) as Database<Inputs, Derivations>;
 }

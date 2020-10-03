@@ -38,19 +38,19 @@ export function typed(): void {
     const AST = "AST";
     const PROGRAM_AST = "PROGRAM_AST";
 
-    const inputs = {
-        [MANIFEST]: [""],
-        [SOURCE_TEXT]: "",
-    };
-
-    type Inputs = typeof inputs
+    type Inputs = {
+        [MANIFEST]: string[];
+        [SOURCE_TEXT]: string;
+    }
 
     type Derivations = {
         [AST]: string;
         [PROGRAM_AST]: string[];
     }
 
-    const derivations: Typed.DerivationsSpec<Inputs, Derivations> = {
+    const spec: Typed.DatabaseSpec<Inputs, Derivations> = {
+        [MANIFEST]: null,
+        [SOURCE_TEXT]: null,
         [AST]: (db, key) => {
             const source_text = db.get_value(SOURCE_TEXT, key);
             return `@${source_text}@`;
@@ -61,7 +61,7 @@ export function typed(): void {
         },
     }
 
-    const db = Typed.Database(inputs, derivations);
+    const db = Typed.Database(spec);
 
     db.set_value(MANIFEST, "", ["a.rs", "b.rs"]);
     db.set_value(SOURCE_TEXT, "a.rs", "abc");
