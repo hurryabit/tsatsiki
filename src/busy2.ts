@@ -33,7 +33,7 @@ export function Database<Inputs extends AnySpec, Rules extends AnySpec>(
         db.add_input(name);
     }
     for (const name in rules) {
-        db.add_rule(name, rules[name] as Untyped.Rule);
+        db.add_derivation(name, rules[name] as Untyped.Derivation);
     }
     return db as Database<Inputs, Rules>;
 }

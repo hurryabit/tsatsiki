@@ -11,12 +11,12 @@ export function untyped(): void {
     db.add_input(SOURCE_TEXT);
 
     const AST = "AST";
-    db.add_rule(AST, (db, key) => {
+    db.add_derivation(AST, (db, key) => {
         const source_text = db.get_value(SOURCE_TEXT, key) as string;
         return `@${source_text}@`;
     });
     const PROGRAM_AST = "PROGRAM_AST";
-    db.add_rule(PROGRAM_AST, (db, key) => {
+    db.add_derivation(PROGRAM_AST, (db, key) => {
         const manifest = db.get_value(MANIFEST, key) as [string];
         return manifest.map((file) => db.get_value(AST, file) as string);
     });
