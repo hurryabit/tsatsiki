@@ -32,28 +32,25 @@ type Layer = {
     nodes: {[key: string]: Node};
 }
 
-class DatabaseImpl implements Database {
-    layers: {[name: string]: Layer}
-    current_revision: Revision = 0;
+export function Database(spec: DatabaseSpec): Database {
+    const layers: {[name: string]: Layer} = {};
+    let current_revision: Revision = 0;
 
-    constructor(spec: DatabaseSpec) {
-        this.layers = {};
-        for (const layer in spec) {
-            this.layers[layer] = {derivation: spec[layer], nodes: {}};
-        }
+    for (const layer in spec) {
+        layers[layer] = {derivation: spec[layer], nodes: {}};
     }
 
-    private get_traced_reader(): {reader: DatabaseReader, trace: NodeId[]} {
+    function get_traced_reader(): {reader: DatabaseReader, trace: NodeId[]} {
         const trace: NodeId[] = [];
-        const get_value = (layer: string, key: string) => {
+        function traced_get_value(layer: string, key: string) {
             trace.push({ layer, key });
-            return this.get_value(layer, key);
+            return get_value(layer, key);
         }
-        return {reader: {get_value}, trace};
+        return {reader: {get_value: traced_get_value}, trace};
     }
 
-    private eval_node({layer: layer_name, key}: NodeId): Node {
-        const layer = this.layers[layer_name];
+    function eval_node({layer: layer_name, key}: NodeId): Node {
+        const layer = layers[layer_name];
         if (layer === undefined) {
             // An unknown node type.
             throw Error(`Getting value for unknown layer ${layer_name}.`);
@@ -66,27 +63,27 @@ class DatabaseImpl implements Database {
                 throw Error(`Getting value for unset input ${layer_name}/${key}.`);
             }
             console.log(`Accessing input ${layer_name}/${key}.`)
-            node.verified_at = this.current_revision;
+            node.verified_at = current_revision;
             return node;
         }
 
         if (node === undefined) {
             // A derived node that is computed for the first time.
             console.log(`Evaluating ${layer_name}/${key} for the first time...`);
-            const {reader, trace} = this.get_traced_reader();
+            const {reader, trace} = get_traced_reader();
             const value = layer.derivation(reader, key);
             const node: Node = {
                 value: value,
                 dependencies: trace,
-                changed_at: this.current_revision,
-                verified_at: this.current_revision,
+                changed_at: current_revision,
+                verified_at: current_revision,
             };
             layer.nodes[key] = node;
             console.log(`Evaluated ${layer_name}/${key}.`);
             return node;
         }
 
-        if (node.verified_at === this.current_revision) {
+        if (node.verified_at === current_revision) {
             // A derived node that has already been verified since the last change.
             console.log(`Taking ${layer_name}/${key} from cache because is has been verified already.`)
             return node;
@@ -95,8 +92,8 @@ class DatabaseImpl implements Database {
         // A derived node that has not yet been verified since the last change.
         let inputs_changed = false;
         for (const dep_node_id of node.dependencies) {
-            const dep_node = this.eval_node(dep_node_id);
-            if (dep_node.changed_at === this.current_revision) {
+            const dep_node = eval_node(dep_node_id);
+            if (dep_node.changed_at === current_revision) {
                 inputs_changed = true;
                 break;
             }
@@ -105,16 +102,16 @@ class DatabaseImpl implements Database {
         if (!inputs_changed) {
             // A derived node whose inputs have not changed.
             console.log(`Taking ${layer_name}/${key} from cache because the inputs are unchanged.`);
-            node.verified_at = this.current_revision;
+            node.verified_at = current_revision;
             return node;
         }
 
         // A derived node whose inputs have changed.
         console.log(`Re-evaluating ${layer_name}/${key}...`);
-        const {reader, trace} = this.get_traced_reader();
+        const {reader, trace} = get_traced_reader();
         const value = layer.derivation(reader, key);
         node.dependencies = trace;
-        node.verified_at = this.current_revision;
+        node.verified_at = current_revision;
 
         if (deepEqual(value, node.value, {strict: true})) {
             // A derived node whose value has not changed.
@@ -124,13 +121,13 @@ class DatabaseImpl implements Database {
 
         // A derived node whose value has changed.
         node.value = value;
-        node.changed_at = this.current_revision;
+        node.changed_at = current_revision;
         console.log(`Evaluated ${layer_name}/${key}.`);
         return node;
     }
 
-    set_value(layer_name: string, key: string, value: unknown): void {
-        const layer = this.layers[layer_name];
+    function set_value(layer_name: string, key: string, value: unknown): void {
+        const layer = layers[layer_name];
         if (layer === undefined) {
             throw Error(`Setting value for unknown layer ${layer_name}.`);
         }
@@ -140,20 +137,18 @@ class DatabaseImpl implements Database {
             return;
         }
 
-        this.current_revision += 1;
+        current_revision += 1;
         layer.nodes[key] = {
             value: value,
             dependencies: [],
-            changed_at: this.current_revision,
-            verified_at: this.current_revision,
+            changed_at: current_revision,
+            verified_at: current_revision,
         };
     }
 
-    get_value(layer: string, key: string): unknown {
-        return this.eval_node({layer, key}).value;
+    function get_value(layer: string, key: string): unknown {
+        return eval_node({layer, key}).value;
     }
-}
 
-export function Database(spec: DatabaseSpec): Database {
-    return new DatabaseImpl(spec);
+    return {get_value, set_value};
 }
