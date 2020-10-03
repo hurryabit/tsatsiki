@@ -40,15 +40,6 @@ export function Database(spec: DatabaseSpec): Database {
         layers[layer] = {derivation: spec[layer], nodes: {}};
     }
 
-    function get_traced_reader(): {reader: DatabaseReader, trace: NodeId[]} {
-        const trace: NodeId[] = [];
-        function traced_get_value(layer: string, key: string) {
-            trace.push({ layer, key });
-            return get_value(layer, key);
-        }
-        return {reader: {get_value: traced_get_value}, trace};
-    }
-
     function eval_node({layer: layer_name, key}: NodeId): Node {
         const layer = layers[layer_name];
         if (layer === undefined) {
@@ -70,11 +61,11 @@ export function Database(spec: DatabaseSpec): Database {
         if (node === undefined) {
             // A derived node that is computed for the first time.
             console.log(`Evaluating ${layer_name}/${key} for the first time...`);
-            const {reader, trace} = get_traced_reader();
+            const reader = get_traced_reader();
             const value = layer.derivation(reader, key);
             const node: Node = {
                 value: value,
-                dependencies: trace,
+                dependencies: reader.trace(),
                 changed_at: current_revision,
                 verified_at: current_revision,
             };
@@ -108,9 +99,9 @@ export function Database(spec: DatabaseSpec): Database {
 
         // A derived node whose inputs have changed.
         console.log(`Re-evaluating ${layer_name}/${key}...`);
-        const {reader, trace} = get_traced_reader();
+        const reader = get_traced_reader();
         const value = layer.derivation(reader, key);
-        node.dependencies = trace;
+        node.dependencies = reader.trace();
         node.verified_at = current_revision;
 
         if (deepEqual(value, node.value, {strict: true})) {
@@ -124,6 +115,23 @@ export function Database(spec: DatabaseSpec): Database {
         node.changed_at = current_revision;
         console.log(`Evaluated ${layer_name}/${key}.`);
         return node;
+    }
+
+    function get_value(layer: string, key: string): unknown {
+        return eval_node({layer, key}).value;
+    }
+
+    function get_traced_reader(): DatabaseReader & {trace(): NodeId[]} {
+        const trace: NodeId[] = [];
+        return {
+            get_value(layer: string, key: string) {
+                trace.push({ layer, key });
+                return get_value(layer, key);
+            },
+            trace() {
+                return trace;
+            },
+        };
     }
 
     function set_value(layer_name: string, key: string, value: unknown): void {
@@ -144,10 +152,6 @@ export function Database(spec: DatabaseSpec): Database {
             changed_at: current_revision,
             verified_at: current_revision,
         };
-    }
-
-    function get_value(layer: string, key: string): unknown {
-        return eval_node({layer, key}).value;
     }
 
     return {get_value, set_value};
