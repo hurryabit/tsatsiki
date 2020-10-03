@@ -17,8 +17,4 @@ export type DatabaseSpec<Inputs extends TypeSpec, Derivations extends TypeSpec> 
         : null;
 }
 
-export function Database<Inputs extends TypeSpec, Derivations extends TypeSpec>(
-    spec: DatabaseSpec<Inputs, Derivations>,
-): Database<Inputs, Derivations> {
-    return Untyped.Database(spec as Untyped.DatabaseSpec) as Database<Inputs, Derivations>;
-}
+export const Database = Untyped.Database as <Inputs extends TypeSpec, Derivations extends TypeSpec>(spec: DatabaseSpec<Inputs, Derivations>) => Database<Inputs, Derivations>;
