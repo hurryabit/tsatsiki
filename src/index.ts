@@ -1,5 +1,5 @@
-import * as Untyped from './busy1';
-import * as Typed from './busy2';
+import * as Untyped from './untyped';
+import * as Typed from './typed';
 
 export function untyped(): void {
     const MANIFEST = "MANIFEST";

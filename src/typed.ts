@@ -1,4 +1,4 @@
-import * as Untyped from './busy1';
+import * as Untyped from './untyped';
 
 type TypeSpec = Record<string, unknown>
 
