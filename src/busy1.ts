@@ -7,6 +7,8 @@ export type DatabaseReader = {
 
 export type Derivation = (reader: DatabaseReader, key: string) => unknown
 
+export type DatabaseSpec = {[layer: string]: Derivation | null}
+
 type Revision = number
 
 type NodeId = {
@@ -22,13 +24,20 @@ type Node = {
 }
 
 type Layer = {
-    derivation?: Derivation;
+    derivation: Derivation | null;
     nodes: {[key: string]: Node};
 }
 
 export class Database implements DatabaseReader {
-    layers: {[name: string]: Layer} = {}
+    layers: {[name: string]: Layer}
     current_revision: Revision = 0;
+
+    constructor(spec: DatabaseSpec) {
+        this.layers = {};
+        for (const layer in spec) {
+            this.layers[layer] = {derivation: spec[layer], nodes: {}};
+        }
+    }
 
     private get_traced_reader(): {reader: DatabaseReader, trace: NodeId[]} {
         const trace: NodeId[] = [];
@@ -47,7 +56,7 @@ export class Database implements DatabaseReader {
         }
         const node = layer.nodes[key];
 
-        if (layer.derivation === undefined) {
+        if (layer.derivation === null) {
             // An input node.
             if (node === undefined) {
                 throw Error(`Getting value for unset input ${layer_name}/${key}.`);
@@ -114,14 +123,6 @@ export class Database implements DatabaseReader {
         node.changed_at = this.current_revision;
         console.log(`Evaluated ${layer_name}/${key}.`);
         return node;
-    }
-
-    add_input(layer: string): void {
-        this.layers[layer] = {derivation: undefined, nodes: {}};
-    }
-
-    add_derivation(layer: string, derivation: Derivation): void {
-        this.layers[layer] = {derivation, nodes: {}};
     }
 
     set_value(layer_name: string, key: string, value: unknown): void {
