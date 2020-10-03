@@ -40,16 +40,22 @@ export class Database implements DatabaseReader {
         const cell = this.cells[name][key];
 
         if (rule === undefined) {
+            // An unknown node type.
             throw Error(`Getting value for undefined rule ${name}.`);
-        } else if (rule === null) {
+        }
+
+        if (rule === null) {
+            // An input node.
             if (cell === undefined) {
                 throw Error(`Getting value for unset input ${name}/${key}.`);
-            } else {
-                console.log(`Accessing input ${name}/${key}.`)
-                cell.verified_at = this.current_revision;
-                return cell;
             }
-        } else if (cell === undefined) {
+            console.log(`Accessing input ${name}/${key}.`)
+            cell.verified_at = this.current_revision;
+            return cell;
+        }
+
+        if (cell === undefined) {
+            // A derived node that is computed for the first time.
             console.log(`Evaluating ${name}/${key} for the first time...`);
             const {reader, trace} = this.get_traced_reader();
             const value = rule(reader, key);
@@ -62,36 +68,49 @@ export class Database implements DatabaseReader {
             this.cells[name][key] = cell;
             console.log(`Evaluated ${name}/${key}.`);
             return cell;
-        } else if (cell.verified_at === this.current_revision) {
+        }
+
+        if (cell.verified_at === this.current_revision) {
+            // A derived node that has already been verified since the last change.
             console.log(`Taking ${name}/${key} from cache because is has been verified already.`)
             return cell;
-        } else {
-            let inputs_changed = false;
-            for (const dep_query of cell.dependencies) {
-                const dep_cell = this.eval_cell(dep_query);
-                if (dep_cell.changed_at === this.current_revision) {
-                    inputs_changed = true;
-                    break;
-                }
+        }
+
+        // A derived node that has not yet been verified since the last change.
+        let inputs_changed = false;
+        for (const dep_query of cell.dependencies) {
+            const dep_cell = this.eval_cell(dep_query);
+            if (dep_cell.changed_at === this.current_revision) {
+                inputs_changed = true;
+                break;
             }
-            if (inputs_changed) {
-                console.log(`Re-evaluating ${name}/${key}...`);
-                const {reader, trace} = this.get_traced_reader();
-                const value = rule(reader, key);
-                cell.dependencies = trace;
-                if (!deepEqual(value, cell.value, {strict: true})) {
-                    cell.value = value;
-                    cell.changed_at = this.current_revision;
-                    console.log(`Evaluated ${name}/${key}.`);
-                } else {
-                    console.log(`Taking ${name}/${key} from cache because the value is unchanged.`);
-                }
-            } else {
-                console.log(`Taking ${name}/${key} from cache because the inputs are unchanged.`);
-            }
+        }
+
+        if (!inputs_changed) {
+            // A derived node whose inputs have not changed.
+            console.log(`Taking ${name}/${key} from cache because the inputs are unchanged.`);
             cell.verified_at = this.current_revision;
             return cell;
         }
+
+        // A derived node whose inputs have changed.
+        console.log(`Re-evaluating ${name}/${key}...`);
+        const {reader, trace} = this.get_traced_reader();
+        const value = rule(reader, key);
+        cell.dependencies = trace;
+        cell.verified_at = this.current_revision;
+
+        if (deepEqual(value, cell.value, {strict: true})) {
+            // A derived node whose value has not changed.
+            console.log(`Taking ${name}/${key} from cache because the value is unchanged.`);
+            return cell;
+        }
+
+        // A derived node whose value has changed.
+        cell.value = value;
+        cell.changed_at = this.current_revision;
+        console.log(`Evaluated ${name}/${key}.`);
+        return cell;
     }
 
     add_input(name: string): void {
