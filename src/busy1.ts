@@ -2,10 +2,14 @@
 import deepEqual from 'deep-equal';
 
 export type DatabaseReader = {
-    get_value: (layer: string, key: string) => unknown;
+    get_value(layer: string, key: string): unknown;
 }
 
-export type Derivation = (reader: DatabaseReader, key: string) => unknown
+export type Database = DatabaseReader & {
+    set_value(layer: string, key: string, value: unknown): void;
+}
+
+type Derivation = (reader: DatabaseReader, key: string) => unknown
 
 export type DatabaseSpec = {[layer: string]: Derivation | null}
 
@@ -28,7 +32,7 @@ type Layer = {
     nodes: {[key: string]: Node};
 }
 
-export class Database implements DatabaseReader {
+class DatabaseImpl implements Database {
     layers: {[name: string]: Layer}
     current_revision: Revision = 0;
 
@@ -148,4 +152,8 @@ export class Database implements DatabaseReader {
     get_value(layer: string, key: string): unknown {
         return this.eval_node({layer, key}).value;
     }
+}
+
+export function Database(spec: DatabaseSpec): Database {
+    return new DatabaseImpl(spec);
 }

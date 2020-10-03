@@ -19,7 +19,7 @@ export function untyped(): void {
             return manifest.map((file) => db.get_value(AST, file) as string);
         },
     };
-    const db = new Untyped.Database(spec);
+    const db = Untyped.Database(spec);
 
     db.set_value(MANIFEST, "", ["a.rs", "b.rs"]);
     db.set_value(SOURCE_TEXT, "a.rs", "abc");
