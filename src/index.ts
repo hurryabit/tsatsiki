@@ -38,22 +38,19 @@ export function typed(): void {
     const AST = "AST";
     const PROGRAM_AST = "PROGRAM_AST";
 
-    type Inputs = {
-        [MANIFEST]: string[];
-        [SOURCE_TEXT]: string;
-    }
+    const inputs = {
+        [MANIFEST]: [""],
+        [SOURCE_TEXT]: "",
+    };
 
-    type Rules = {
+    type Inputs = typeof inputs
+
+    type Derivations = {
         [AST]: string;
         [PROGRAM_AST]: string[];
     }
 
-    const inputs: Typed.InputsSpec<Inputs> = {
-        [MANIFEST]: null,
-        [SOURCE_TEXT]: null,
-    };
-
-    const derivations: Typed.DerivationsSpec<Inputs, Rules> = {
+    const derivations: Typed.DerivationsSpec<Inputs, Derivations> = {
         [AST]: (db, key) => {
             const source_text = db.get_value(SOURCE_TEXT, key);
             return `@${source_text}@`;

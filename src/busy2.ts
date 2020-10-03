@@ -1,35 +1,37 @@
 import * as Untyped from './busy1';
 
-type Types = {[name: string]: unknown}
+type TypesSpec = {[name: string]: unknown}
 
-type Getter<Spec extends Types> =
-    <Name extends keyof Spec>(name: Name, key: string) => Spec[Name]
+type Getter<Types extends TypesSpec> =
+    <Name extends keyof Types>(name: Name, key: string) => Types[Name]
 
-type Setter<Spec extends Types> =
-    <Name extends keyof Spec>(name: Name, key: string, value: Spec[Name]) => void
+type Setter<Types extends TypesSpec> =
+    <Name extends keyof Types>(name: Name, key: string, value: Types[Name]) => void
 
-type DatabaseReader<Inputs extends Types, Derivations extends Types> = {
+type DatabaseReader<Inputs extends TypesSpec, Derivations extends TypesSpec> = {
     get_value: Getter<Inputs & Derivations>;
 }
 
-type DatabaseWriter<Inputs extends Types> = {
+type DatabaseWriter<Inputs extends TypesSpec> = {
     set_value: Setter<Inputs>
 }
 
-export type Database<Inputs extends Types, Derivations extends Types> =
+export type Database<Inputs extends TypesSpec, Derivations extends TypesSpec> =
     DatabaseReader<Inputs, Derivations> & DatabaseWriter<Inputs>
 
-export type InputsSpec<Inputs extends Types> = {
-    [Layer in keyof Inputs]: null;
-}
+export type InputsSpec<Inputs extends TypesSpec> = Record<keyof Inputs, unknown>
 
-export type DerivationsSpec<Inputs extends Types, Derivations extends Types> = {
+export type DerivationsSpec<Inputs extends TypesSpec, Derivations extends TypesSpec> = {
     [Name in keyof Derivations]: (db: DatabaseReader<Inputs, Derivations>, key: string) => Derivations[Name];
 }
 
-export function Database<Inputs extends Types, Derivations extends Types>(
+export function Database<Inputs extends TypesSpec, Derivations extends TypesSpec>(
     inputs: InputsSpec<Inputs>,
     derivations: DerivationsSpec<Inputs, Derivations>,
 ): Database<Inputs, Derivations> {
-    return new Untyped.Database({...inputs, ...derivations}) as Database<Inputs, Derivations>;
+    const inputs_spec = {} as Record<keyof Inputs, null>;
+    for (const layer in inputs) {
+        inputs_spec[layer] = null;
+    }
+    return new Untyped.Database({...inputs_spec, ...derivations}) as Database<Inputs, Derivations>;
 }
