@@ -83,7 +83,7 @@ export function Database(spec: DatabaseSpec): Database {
 
         if (node.verified_at === current_revision) {
             // A rule node that has already been verified since the last change.
-            log(`Taking ${layer_name}/${key} from cache because is has been verified already.`)
+            log(`Taking ${layer_name}/${key} from cache because is has been verified already.`);
             return node;
         }
 
@@ -91,7 +91,7 @@ export function Database(spec: DatabaseSpec): Database {
         let inputs_changed = false;
         for (const dep_node_id of node.dependencies) {
             const dep_node = eval_node(dep_node_id);
-            if (dep_node.changed_at === current_revision) {
+            if (dep_node.changed_at > node.verified_at) {
                 inputs_changed = true;
                 break;
             }

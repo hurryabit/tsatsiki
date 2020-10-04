@@ -1,4 +1,4 @@
-import {Database, DatabaseSpec} from '../src/untyped';
+import {Database, DatabaseReader, DatabaseSpec} from '../src/untyped';
 
 const FILE_CONTENTS = "FILE_CONTENTS"; // string
 const PARSE_NUMBER = "PARSE_NUMBER"; // number
@@ -22,23 +22,232 @@ const spec: DatabaseSpec = {
     },
 };
 
-test("first evaluation", () => {
-    const db = Database(spec);
+type Query = [string, string]
 
-    db.set_value(FILE_CONTENTS, "x.dat", "1");
-    db.set_value(FILE_CONTENTS, "y.dat", "2");
-    db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
-    expect(db.get_value(SUM, "list.txt") as number).toBe(3);
+function TracedDatabase(spec: DatabaseSpec): Database & { trace: Query[] } {
+    const result = { trace: [] as Query[] };
+    const traced_spec: DatabaseSpec = {};
+    for (const layer in spec) {
+        const rule = spec[layer];
+        if (rule === null) {
+            traced_spec[layer] = null;
+        } else {
+            traced_spec[layer] = function (db: DatabaseReader, key: string) {
+                result.trace.push([layer, key]);
+                return rule(db, key);
+            }
+        }
+    }
+    const db = Database(traced_spec);
+    return Object.assign(result, db);
+}
+
+describe("inputs", function () {
+    test("reading before setting throws", function () {
+        const db = TracedDatabase(spec);
+
+        expect(() => db.get_value(FILE_CONTENTS, "x.dat")).toThrow("Getting value for unset input");
+    });
+
+    test("first setting is persisted", function () {
+        const db = TracedDatabase(spec);
+
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        expect(db.get_value(FILE_CONTENTS, "x.dat")).toEqual("1");
+    });
+
+    test("re-setting is persistsed", function () {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.get_value(FILE_CONTENTS, "x.dat");
+
+        db.set_value(FILE_CONTENTS, "x.dat", "2");
+        expect(db.get_value(FILE_CONTENTS, "x.dat")).toEqual("2");
+    });
+
+    test("first setting can be read by rule", function () {
+        const db = TracedDatabase(spec);
+
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        expect(db.get_value(PARSE_NUMBER, "x.dat")).toBe(1);
+    });
+
+    test("re-setting can be read by rule", function () {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.get_value(PARSE_NUMBER, "x.dat");
+
+        db.set_value(FILE_CONTENTS, "x.dat", "2");
+        expect(db.get_value(PARSE_NUMBER, "x.dat")).toEqual(2);
+    });
+
+    test("re-setting increases time", function () {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.get_value(PARSE_NUMBER, "x.dat");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "x.dat", "2");
+        expect(db.get_value(PARSE_NUMBER, "x.dat")).toBe(2);
+        expect(db.trace).toEqual([[PARSE_NUMBER, "x.dat"]]);
+    });
+
+    test("re-setting to same value does not increase time", function () {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.get_value(PARSE_NUMBER, "x.dat");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        expect(db.get_value(PARSE_NUMBER, "x.dat")).toBe(1);
+        // If we did not notice that the new value for
+        // `[FILE_CONTENTS, "x.dat"]` matches the old value, we would
+        // re-evaluate `[PARSE_NUMER, "x.dat"]`.
+        expect(db.trace).toEqual([]);
+    });
+
+    test("re-setting back and forth increases time", function () {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.get_value(PARSE_NUMBER, "x.dat");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "x.dat", "2");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        expect(db.get_value(PARSE_NUMBER, "x.dat")).toBe(1);
+        expect(db.trace).toEqual([[PARSE_NUMBER, "x.dat"]]);
+    });
 });
 
-test("re-evaluation", () => {
-    const db = Database(spec);
+describe("basic evaluation", function () {
+    test("first evaluation", function () {
+        const db = TracedDatabase(spec);
 
-    db.set_value(FILE_CONTENTS, "x.dat", "1");
-    db.set_value(FILE_CONTENTS, "y.dat", "2");
-    db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
-    db.get_value(SUM, "list.txt");
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.set_value(FILE_CONTENTS, "y.dat", "2");
+        expect(db.get_value(SUM, "list.txt")).toBe(3);
+        expect(db.trace).toEqual([
+            [SUM, "list.txt"],
+            [PARSE_LIST, "list.txt"],
+            [PARSE_NUMBER, "x.dat"],
+            [PARSE_NUMBER, "y.dat"],
+        ]);
+    });
 
-    db.set_value(FILE_CONTENTS, "y.dat", "3");
-    expect(db.get_value(SUM, "list.txt") as number).toBe(4);
+    test("re-evaluation on relevant change", () => {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.set_value(FILE_CONTENTS, "y.dat", "2");
+        db.get_value(SUM, "list.txt");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "y.dat", "3");
+        expect(db.get_value(SUM, "list.txt")).toBe(4);
+        expect(db.trace).toEqual([
+            [PARSE_NUMBER, "y.dat"],
+            [SUM, "list.txt"],
+        ]);
+    });
+
+    test("no re-evaluation when no changes", function () {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.set_value(FILE_CONTENTS, "y.dat", "2");
+        db.get_value(SUM, "list.txt");
+        db.trace = [];
+
+        expect(db.get_value(SUM, "list.txt")).toBe(3);
+        expect(db.trace).toEqual([]);
+    });
+
+    test("no re-evaluation on irrelevant changes", function () {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.set_value(FILE_CONTENTS, "y.dat", "2");
+        db.get_value(SUM, "list.txt");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "z.dat", "3");
+        expect(db.get_value(SUM, "list.txt")).toBe(3);
+        expect(db.trace).toEqual([]);
+    });
+});
+
+describe("evaluation optimizations", function() {
+    test("dependencies are evaluated only once", function() {
+        const db = TracedDatabase(spec);
+
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\nx.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        expect(db.get_value(SUM, "list.txt")).toBe(2);
+        expect(db.trace).toEqual([
+            [SUM, "list.txt"],
+            [PARSE_LIST, "list.txt"],
+            [PARSE_NUMBER, "x.dat"],
+        ]);
+    });
+
+    test("early cutoff in evaluation", function() {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.set_value(FILE_CONTENTS, "y.dat", "2");
+        db.get_value(SUM, "list.txt");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\n \ny.dat\n");
+        db.set_value(FILE_CONTENTS, "x.dat", " 1 ");
+        expect(db.get_value(SUM, "list.txt")).toBe(3);
+        // If we did not recognize that the values of `[PARSE_LIST, "list.txt"]`
+        // and `[PARSE_NUMBER, "x.dat"]` are unchanged, we would re-evaluate
+        // `[SUM, "list.txt"]`.
+        expect(db.trace).toEqual([
+            [PARSE_LIST, "list.txt"],
+            [PARSE_NUMBER, "x.dat"],
+        ]);
+    });
+
+    test("early cutoff in dependency check", function() {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.set_value(FILE_CONTENTS, "y.dat", "2");
+        db.get_value(SUM, "list.txt");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\nz.dat");
+        db.set_value(FILE_CONTENTS, "y.dat", "3");
+        db.set_value(FILE_CONTENTS, "z.dat", "4");
+        expect(db.get_value(SUM, "list.txt")).toBe(5);
+        // If we did not cut the dependency check off early, we would
+        // re-evaluate `[PARSE_NUMBER, "y.dat"]` as part of the check.
+        expect(db.trace).toEqual([
+            [PARSE_LIST, "list.txt"],
+            [SUM, "list.txt"],
+            [PARSE_NUMBER, "z.dat"],
+        ]);
+    });
+
+    test("update dependencies even when value unchanged", function() {
+        const db = TracedDatabase(spec);
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
+        db.set_value(FILE_CONTENTS, "x.dat", "1");
+        db.set_value(FILE_CONTENTS, "y.dat", "2");
+        db.get_value(SUM, "list.txt");
+        db.set_value(FILE_CONTENTS, "list.txt", "x.dat\nz.dat");
+        db.set_value(FILE_CONTENTS, "z.dat", "2");
+        db.get_value(SUM, "list.txt");
+        db.trace = [];
+
+        db.set_value(FILE_CONTENTS, "y.dat", "3");
+        expect(db.get_value(SUM, "list.txt")).toBe(3);
+        // If we did update the dependencies even when the value has not
+        // changed, we would re-evaluate `[PARSE_NUMBER, "y.dat"]` as part of
+        // the dependency check.
+        expect(db.trace).toEqual([]);
+    });
 });
