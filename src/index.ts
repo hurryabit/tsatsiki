@@ -1,77 +1,20 @@
 import * as Untyped from './untyped';
-import * as Typed from './typed';
 
-export function untyped(): void {
-    const MANIFEST = "MANIFEST";
-    const SOURCE_TEXT = "SOURCE_TEXT";
-    const AST = "AST";
-    const PROGRAM_AST = "PROGRAM_AST";
+export type TypeSpec = Record<string, unknown>
 
-    const spec: Untyped.DatabaseSpec = {
-        [MANIFEST]: null,
-        [SOURCE_TEXT]: null,
-        [AST]: (db, key) => {
-            const source_text = db.get_value(SOURCE_TEXT, key) as string;
-            return `@${source_text}@`;
-        },
-        [PROGRAM_AST]: (db, key) => {
-            const manifest = db.get_value(MANIFEST, key) as [string];
-            return manifest.map((file) => db.get_value(AST, file) as string);
-        },
-    };
-    const db = Untyped.Database(spec);
-
-    db.set_value(MANIFEST, "", ["a.rs", "b.rs"]);
-    db.set_value(SOURCE_TEXT, "a.rs", "abc");
-    db.set_value(SOURCE_TEXT, "b.rs", "xyz");
-    console.log("program:", db.get_value(PROGRAM_AST, ""));
-
-    db.set_value(SOURCE_TEXT, "b.rs", "def");
-    console.log("program:", db.get_value(PROGRAM_AST, ""));
-
-    // console.dir(db.values, {depth: null});
+export type DatabaseReader<Inputs extends TypeSpec, Rules extends TypeSpec> = {
+    get_value<Layer extends keyof (Inputs & Rules)>(name: Layer, key: string): (Inputs & Rules)[Layer];
 }
 
-export function typed(): void {
-    const MANIFEST = "MANIFEST";
-    const SOURCE_TEXT = "SOURCE_TEXT";
-    const AST = "AST";
-    const PROGRAM_AST = "PROGRAM_AST";
-
-    type Inputs = {
-        [MANIFEST]: string[];
-        [SOURCE_TEXT]: string;
-    }
-
-    type Rules = {
-        [AST]: string;
-        [PROGRAM_AST]: string[];
-    }
-
-    const spec: Typed.DatabaseSpec<Inputs, Rules> = {
-        [MANIFEST]: null,
-        [SOURCE_TEXT]: null,
-        [AST]: (db, key) => {
-            const source_text = db.get_value(SOURCE_TEXT, key);
-            return `@${source_text}@`;
-        },
-        [PROGRAM_AST]: (db, key) => {
-            const manifest = db.get_value(MANIFEST, key) as [string];
-            return manifest.map((file) => db.get_value(AST, file));
-        },
-    }
-
-    const db = Typed.Database(spec);
-
-    db.set_value(MANIFEST, "", ["a.rs", "b.rs"]);
-    db.set_value(SOURCE_TEXT, "a.rs", "abc");
-    db.set_value(SOURCE_TEXT, "b.rs", "xyz");
-    console.log("program:", db.get_value(PROGRAM_AST, ""));
-
-    db.set_value(SOURCE_TEXT, "b.rs", "def");
-    console.log("program:", db.get_value(PROGRAM_AST, ""));
-
-    // console.dir(db.values, {depth: null});
+export type Database<Inputs extends TypeSpec, Rules extends TypeSpec> = DatabaseReader<Inputs, Rules> & {
+    set_value<Layer extends keyof Inputs>(name: Layer, key: string, value: Inputs[Layer]): void;
 }
 
-typed();
+export type DatabaseSpec<Inputs extends TypeSpec, Rules extends TypeSpec> = {
+    [Layer in keyof Inputs | keyof Rules]:
+        Layer extends keyof Rules
+        ? (Layer extends keyof Inputs ? never : (db: DatabaseReader<Inputs, Rules>, key: string) => Rules[Layer])
+        : null;
+}
+
+export const Database = Untyped.Database as <Inputs extends TypeSpec, Rules extends TypeSpec>(spec: DatabaseSpec<Inputs, Rules>) => Database<Inputs, Rules>;

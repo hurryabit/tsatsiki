@@ -1,4 +1,4 @@
-import {Database, DatabaseReader, DatabaseSpec, TypeSpec} from '../src/typed';
+import {Database, DatabaseReader, DatabaseSpec, TypeSpec} from '../src';
 
 const FILE_CONTENTS = "FILE_CONTENTS";
 const PARSE_LIST = "PARSE_LIST";
