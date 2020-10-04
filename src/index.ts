@@ -43,12 +43,12 @@ export function typed(): void {
         [SOURCE_TEXT]: string;
     }
 
-    type Derivations = {
+    type Rules = {
         [AST]: string;
         [PROGRAM_AST]: string[];
     }
 
-    const spec: Typed.DatabaseSpec<Inputs, Derivations> = {
+    const spec: Typed.DatabaseSpec<Inputs, Rules> = {
         [MANIFEST]: null,
         [SOURCE_TEXT]: null,
         [AST]: (db, key) => {

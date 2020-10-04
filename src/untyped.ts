@@ -9,9 +9,9 @@ export type Database = DatabaseReader & {
     set_value(layer: string, key: string, value: unknown): void;
 }
 
-type Derivation = (reader: DatabaseReader, key: string) => unknown
+type Rule = (reader: DatabaseReader, key: string) => unknown
 
-export type DatabaseSpec = {[layer: string]: Derivation | null}
+export type DatabaseSpec = {[layer: string]: Rule | null}
 
 type Revision = number
 
@@ -28,7 +28,7 @@ type Node = {
 }
 
 type Layer = {
-    derivation: Derivation | null;
+    rule: Rule | null;
     nodes: {[key: string]: Node};
 }
 
@@ -37,7 +37,7 @@ export function Database(spec: DatabaseSpec): Database {
     let current_revision: Revision = 0;
 
     for (const layer in spec) {
-        layers[layer] = {derivation: spec[layer], nodes: {}};
+        layers[layer] = {rule: spec[layer], nodes: {}};
     }
 
     function eval_node({layer: layer_name, key}: NodeId): Node {
@@ -48,7 +48,7 @@ export function Database(spec: DatabaseSpec): Database {
         }
         const node = layer.nodes[key];
 
-        if (layer.derivation === null) {
+        if (layer.rule === null) {
             // An input node.
             if (node === undefined) {
                 throw Error(`Getting value for unset input ${layer_name}/${key}.`);
@@ -59,10 +59,10 @@ export function Database(spec: DatabaseSpec): Database {
         }
 
         if (node === undefined) {
-            // A derived node that is computed for the first time.
+            // A rule node that is computed for the first time.
             console.log(`Evaluating ${layer_name}/${key} for the first time...`);
             const reader = get_traced_reader();
-            const value = layer.derivation(reader, key);
+            const value = layer.rule(reader, key);
             const node: Node = {
                 value: value,
                 dependencies: reader.trace(),
@@ -75,12 +75,12 @@ export function Database(spec: DatabaseSpec): Database {
         }
 
         if (node.verified_at === current_revision) {
-            // A derived node that has already been verified since the last change.
+            // A rule node that has already been verified since the last change.
             console.log(`Taking ${layer_name}/${key} from cache because is has been verified already.`)
             return node;
         }
 
-        // A derived node that has not yet been verified since the last change.
+        // A rule node that has not yet been verified since the last change.
         let inputs_changed = false;
         for (const dep_node_id of node.dependencies) {
             const dep_node = eval_node(dep_node_id);
@@ -91,26 +91,26 @@ export function Database(spec: DatabaseSpec): Database {
         }
 
         if (!inputs_changed) {
-            // A derived node whose inputs have not changed.
+            // A rule node whose inputs have not changed.
             console.log(`Taking ${layer_name}/${key} from cache because the inputs are unchanged.`);
             node.verified_at = current_revision;
             return node;
         }
 
-        // A derived node whose inputs have changed.
+        // A rule node whose inputs have changed.
         console.log(`Re-evaluating ${layer_name}/${key}...`);
         const reader = get_traced_reader();
-        const value = layer.derivation(reader, key);
+        const value = layer.rule(reader, key);
         node.dependencies = reader.trace();
         node.verified_at = current_revision;
 
         if (deepEqual(value, node.value, {strict: true})) {
-            // A derived node whose value has not changed.
+            // A rule node whose value has not changed.
             console.log(`Taking ${layer_name}/${key} from cache because the value is unchanged.`);
             return node;
         }
 
-        // A derived node whose value has changed.
+        // A rule node whose value has changed.
         node.value = value;
         node.changed_at = current_revision;
         console.log(`Evaluated ${layer_name}/${key}.`);
