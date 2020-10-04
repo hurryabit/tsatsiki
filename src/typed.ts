@@ -1,6 +1,6 @@
 import * as Untyped from './untyped';
 
-type TypeSpec = Record<string, unknown>
+export type TypeSpec = Record<string, unknown>
 
 export type DatabaseReader<Inputs extends TypeSpec, Rules extends TypeSpec> = {
     get_value<Layer extends keyof (Inputs & Rules)>(name: Layer, key: string): (Inputs & Rules)[Layer];

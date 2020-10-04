@@ -1,19 +1,19 @@
 import {Database, DatabaseReader, DatabaseSpec} from '../src/untyped';
 
 const FILE_CONTENTS = "FILE_CONTENTS"; // string
-const PARSE_NUMBER = "PARSE_NUMBER"; // number
 const PARSE_LIST = "PARSE_LIST"; // string[]
+const PARSE_NUMBER = "PARSE_NUMBER"; // number
 const SUM = "SUM"; // number
 
 const spec: DatabaseSpec = {
     [FILE_CONTENTS]: null,
-    [PARSE_NUMBER]: (db, key) => {
-        const file_contents = db.get_value(FILE_CONTENTS, key) as string;
-        return Number.parseInt(file_contents.trim());
-    },
     [PARSE_LIST]: (db, key) => {
         const file_contents = db.get_value(FILE_CONTENTS, key) as string;
         return file_contents.split(/\r?\n/).map(line => line.trim()).filter(line => line != "")
+    },
+    [PARSE_NUMBER]: (db, key) => {
+        const file_contents = db.get_value(FILE_CONTENTS, key) as string;
+        return Number.parseInt(file_contents.trim());
     },
     [SUM]: (db, key) => {
         const list = db.get_value(PARSE_LIST, key) as string[];
