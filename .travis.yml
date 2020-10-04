@@ -2,6 +2,10 @@ dist: focal
 language: node_js
 node_js: 14
 
+branches:
+  only:
+    - master
+
 cache: yarn
 
 install:
