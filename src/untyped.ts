@@ -35,9 +35,16 @@ type Layer = {
 export function Database(spec: DatabaseSpec): Database {
     const layers: {[name: string]: Layer} = {};
     let current_revision: Revision = 0;
+    const enable_logging = false;
 
     for (const layer in spec) {
         layers[layer] = {rule: spec[layer], nodes: {}};
+    }
+
+    function log(...args: unknown[]) {
+        if (enable_logging) {
+            console.log(...args);
+        }
     }
 
     function eval_node({layer: layer_name, key}: NodeId): Node {
@@ -53,14 +60,14 @@ export function Database(spec: DatabaseSpec): Database {
             if (node === undefined) {
                 throw Error(`Getting value for unset input ${layer_name}/${key}.`);
             }
-            console.log(`Accessing input ${layer_name}/${key}.`)
+            log(`Accessing input ${layer_name}/${key}.`)
             node.verified_at = current_revision;
             return node;
         }
 
         if (node === undefined) {
             // A rule node that is computed for the first time.
-            console.log(`Evaluating ${layer_name}/${key} for the first time...`);
+            log(`Evaluating ${layer_name}/${key} for the first time...`);
             const reader = get_traced_reader();
             const value = layer.rule(reader, key);
             const node: Node = {
@@ -70,13 +77,13 @@ export function Database(spec: DatabaseSpec): Database {
                 verified_at: current_revision,
             };
             layer.nodes[key] = node;
-            console.log(`Evaluated ${layer_name}/${key}.`);
+            log(`Evaluated ${layer_name}/${key}.`);
             return node;
         }
 
         if (node.verified_at === current_revision) {
             // A rule node that has already been verified since the last change.
-            console.log(`Taking ${layer_name}/${key} from cache because is has been verified already.`)
+            log(`Taking ${layer_name}/${key} from cache because is has been verified already.`)
             return node;
         }
 
@@ -92,13 +99,13 @@ export function Database(spec: DatabaseSpec): Database {
 
         if (!inputs_changed) {
             // A rule node whose inputs have not changed.
-            console.log(`Taking ${layer_name}/${key} from cache because the inputs are unchanged.`);
+            log(`Taking ${layer_name}/${key} from cache because the inputs are unchanged.`);
             node.verified_at = current_revision;
             return node;
         }
 
         // A rule node whose inputs have changed.
-        console.log(`Re-evaluating ${layer_name}/${key}...`);
+        log(`Re-evaluating ${layer_name}/${key}...`);
         const reader = get_traced_reader();
         const value = layer.rule(reader, key);
         node.dependencies = reader.trace();
@@ -106,14 +113,14 @@ export function Database(spec: DatabaseSpec): Database {
 
         if (deepEqual(value, node.value, {strict: true})) {
             // A rule node whose value has not changed.
-            console.log(`Taking ${layer_name}/${key} from cache because the value is unchanged.`);
+            log(`Taking ${layer_name}/${key} from cache because the value is unchanged.`);
             return node;
         }
 
         // A rule node whose value has changed.
         node.value = value;
         node.changed_at = current_revision;
-        console.log(`Evaluated ${layer_name}/${key}.`);
+        log(`Evaluated ${layer_name}/${key}.`);
         return node;
     }
 

@@ -17,7 +17,11 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "esModuleInterop": true,
+    "declaration": true,
     "sourceMap": true
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts"
+  ]
 }
