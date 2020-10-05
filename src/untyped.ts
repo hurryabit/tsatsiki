@@ -22,23 +22,38 @@ type NodeId = {
 
 type Node = {
     value: unknown;
-    dependencies: NodeId[];
     changed_at: Revision;
+}
+
+type InputNode = Node
+
+type RuleNode = Node & {
+    dependencies: NodeId[];
     verified_at: Revision;
 }
 
-type Layer = {
-    rule: Rule | null;
-    nodes: Map<string, Node>;
+type InputLayer = {
+    nodes: Map<string, InputNode>;
+}
+
+type RuleLayer = {
+    rule: Rule;
+    nodes: Map<string, RuleNode>;
 }
 
 export function Database(spec: DatabaseSpec): Database {
-    const layers = new Map<string, Layer>();
+    const input_layers = new Map<string, InputLayer>();
+    const rule_layers = new Map<string, RuleLayer>();
     let current_revision: Revision = 0;
     const enable_logging = false;
 
     for (const layer in spec) {
-        layers.set(layer, {rule: spec[layer], nodes: new Map<string, Node>()});
+        const rule = spec[layer];
+        if (rule === null) {
+            input_layers.set(layer, {nodes: new Map<string, InputNode>()});
+        } else {
+            rule_layers.set(layer, {rule, nodes: new Map<string, RuleNode>()});
+        }
     }
 
     function log(...args: unknown[]) {
@@ -47,36 +62,37 @@ export function Database(spec: DatabaseSpec): Database {
         }
     }
 
-    function eval_node({layer: layer_name, key}: NodeId): Pick<Node, "value" | "changed_at"> {
-        const layer = layers.get(layer_name);
-        if (layer === undefined) {
-            // An unknown node type.
-            throw Error(`Getting value for unknown layer ${layer_name}.`);
-        }
-        const node = layer.nodes.get(key);
-
-        if (layer.rule === null) {
+    function update_node({layer: layer_name, key}: NodeId): Node {
+        const input_layer = input_layers.get(layer_name);
+        if (input_layer !== undefined) {
+            const node = input_layer.nodes.get(key);
             // An input node.
             if (node === undefined) {
                 throw Error(`Getting value for unset input ${layer_name}/${key}.`);
             }
             log(`Accessing input ${layer_name}/${key}.`)
-            node.verified_at = current_revision;
             return node;
         }
 
+        const rule_layer = rule_layers.get(layer_name);
+        if (rule_layer === undefined) {
+            // An unknown layer.
+            throw Error(`Getting value for unknown layer ${layer_name}.`);
+        }
+
+        const node = rule_layer.nodes.get(key);
         if (node === undefined) {
             // A rule node that is computed for the first time.
             log(`Evaluating ${layer_name}/${key} for the first time...`);
             const reader = get_traced_reader();
-            const value = layer.rule(reader, key);
-            const node: Node = {
+            const value = rule_layer.rule(reader, key);
+            const node: RuleNode = {
                 value: value,
                 dependencies: reader.trace(),
                 changed_at: current_revision,
                 verified_at: current_revision,
             };
-            layer.nodes.set(key, node);
+            rule_layer.nodes.set(key, node);
             log(`Evaluated ${layer_name}/${key}.`);
             return node;
         }
@@ -90,7 +106,7 @@ export function Database(spec: DatabaseSpec): Database {
         // A rule node that has not yet been verified since the last change.
         let inputs_changed = false;
         for (const dep_node_id of node.dependencies) {
-            const dep_node = eval_node(dep_node_id);
+            const dep_node = update_node(dep_node_id);
             if (dep_node.changed_at > node.verified_at) {
                 inputs_changed = true;
                 break;
@@ -107,7 +123,7 @@ export function Database(spec: DatabaseSpec): Database {
         // A rule node whose inputs have changed.
         log(`Re-evaluating ${layer_name}/${key}...`);
         const reader = get_traced_reader();
-        const value = layer.rule(reader, key);
+        const value = rule_layer.rule(reader, key);
         node.dependencies = reader.trace();
         node.verified_at = current_revision;
 
@@ -125,7 +141,7 @@ export function Database(spec: DatabaseSpec): Database {
     }
 
     function get_value(layer: string, key: string): unknown {
-        return eval_node({layer, key}).value;
+        return update_node({layer, key}).value;
     }
 
     function get_traced_reader(): DatabaseReader & {trace(): NodeId[]} {
@@ -142,22 +158,20 @@ export function Database(spec: DatabaseSpec): Database {
     }
 
     function set_value(layer_name: string, key: string, value: unknown): void {
-        const layer = layers.get(layer_name);
-        if (layer === undefined) {
+        const input_layer = input_layers.get(layer_name);
+        if (input_layer === undefined) {
             throw Error(`Setting value for unknown layer ${layer_name}.`);
         }
 
-        const node = layer.nodes.get(key);
+        const node = input_layer.nodes.get(key);
         if (node !== undefined && deepEqual(value, node.value, {strict: true})) {
             return;
         }
 
         current_revision += 1;
-        layer.nodes.set(key, {
+        input_layer.nodes.set(key, {
             value: value,
-            dependencies: [],
             changed_at: current_revision,
-            verified_at: current_revision,
         });
     }
 
