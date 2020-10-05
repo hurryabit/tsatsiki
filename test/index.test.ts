@@ -1,33 +1,33 @@
 import {Database, DatabaseReader, DatabaseSpec, TypeSpec} from '../src';
 
 const FILE_CONTENTS = "FILE_CONTENTS";
-const PARSE_LIST = "PARSE_LIST";
-const PARSE_NUMBER = "PARSE_NUMBER";
-const SUM = "SUM";
+const EXTRACT_LIST = "EXTRACT_LIST";
+const EXTRACT_NUMBER = "EXTRACT_NUMBER";
+const AGGREGATE = "AGGREGATE";
 
 type Inputs = {
     [FILE_CONTENTS]: string;
 }
 
 type Rules = {
-    [PARSE_LIST]: string[];
-    [PARSE_NUMBER]: number;
-    [SUM]: number;
+    [EXTRACT_LIST]: string[];
+    [EXTRACT_NUMBER]: number;
+    [AGGREGATE]: number;
 }
 
 const spec: DatabaseSpec<Inputs, Rules> = {
     [FILE_CONTENTS]: null,
-    [PARSE_LIST]: (db, key) => {
+    [EXTRACT_LIST]: (db, key) => {
         const file_contents = db.get_value(FILE_CONTENTS, key);
         return file_contents.split(/\r?\n/).map(line => line.trim()).filter(line => line != "")
     },
-    [PARSE_NUMBER]: (db, key) => {
+    [EXTRACT_NUMBER]: (db, key) => {
         const file_contents = db.get_value(FILE_CONTENTS, key);
         return Number.parseInt(file_contents.trim());
     },
-    [SUM]: (db, key) => {
-        const list = db.get_value(PARSE_LIST, key);
-        const numbers = list.map(file => db.get_value(PARSE_NUMBER, file));
+    [AGGREGATE]: (db, key) => {
+        const list = db.get_value(EXTRACT_LIST, key);
+        const numbers = list.map(file => db.get_value(EXTRACT_NUMBER, file));
         return numbers.reduce((x, y) => x + y, 0);
     },
 };
@@ -60,34 +60,34 @@ test("demo", function() {
     db.set_value(FILE_CONTENTS, "list.txt", "x.dat\ny.dat");
     db.set_value(FILE_CONTENTS, "x.dat", "1");
     db.set_value(FILE_CONTENTS, "y.dat", "2");
-    expect(db.get_value(SUM, "list.txt")).toBe(3);
+    expect(db.get_value(AGGREGATE, "list.txt")).toBe(3);
     expect(db.trace).toEqual([
-        [SUM, "list.txt"],
-        [PARSE_LIST, "list.txt"],
-        [PARSE_NUMBER, "x.dat"],
-        [PARSE_NUMBER, "y.dat"],
+        [AGGREGATE, "list.txt"],
+        [EXTRACT_LIST, "list.txt"],
+        [EXTRACT_NUMBER, "x.dat"],
+        [EXTRACT_NUMBER, "y.dat"],
     ]);
 
     db.trace = [];
-    expect(db.get_value("SUM", "list.txt")).toBe(3);
+    expect(db.get_value(AGGREGATE, "list.txt")).toBe(3);
     expect(db.trace).toEqual([]);
 
     db.trace = [];
     db.set_value(FILE_CONTENTS, "y.dat", "3");
-    expect(db.get_value(SUM, "list.txt")).toBe(4);
+    expect(db.get_value(AGGREGATE, "list.txt")).toBe(4);
     expect(db.trace).toEqual([
-        [PARSE_NUMBER, "y.dat"],
-        [SUM, "list.txt"],
+        [EXTRACT_NUMBER, "y.dat"],
+        [AGGREGATE, "list.txt"],
     ]);
 
     db.trace = []
     db.set_value(FILE_CONTENTS, "list.txt", "x.dat\nz.dat");
     db.set_value(FILE_CONTENTS, "y.dat", "4");
     db.set_value(FILE_CONTENTS, "z.dat", "5");
-    expect(db.get_value(SUM, "list.txt")).toBe(6);
+    expect(db.get_value(AGGREGATE, "list.txt")).toBe(6);
     expect(db.trace).toEqual([
-        [PARSE_LIST, "list.txt"],
-        [SUM, "list.txt"],
-        [PARSE_NUMBER, "z.dat"],
+        [EXTRACT_LIST, "list.txt"],
+        [AGGREGATE, "list.txt"],
+        [EXTRACT_NUMBER, "z.dat"],
     ]);
 });
