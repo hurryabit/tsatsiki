@@ -29,16 +29,16 @@ type Node = {
 
 type Layer = {
     rule: Rule | null;
-    nodes: {[key: string]: Node};
+    nodes: Map<string, Node>;
 }
 
 export function Database(spec: DatabaseSpec): Database {
-    const layers: {[name: string]: Layer} = {};
+    const layers = new Map<string, Layer>();
     let current_revision: Revision = 0;
     const enable_logging = false;
 
     for (const layer in spec) {
-        layers[layer] = {rule: spec[layer], nodes: {}};
+        layers.set(layer, {rule: spec[layer], nodes: new Map<string, Node>()});
     }
 
     function log(...args: unknown[]) {
@@ -47,13 +47,13 @@ export function Database(spec: DatabaseSpec): Database {
         }
     }
 
-    function eval_node({layer: layer_name, key}: NodeId): Node {
-        const layer = layers[layer_name];
+    function eval_node({layer: layer_name, key}: NodeId): Pick<Node, "value" | "changed_at"> {
+        const layer = layers.get(layer_name);
         if (layer === undefined) {
             // An unknown node type.
             throw Error(`Getting value for unknown layer ${layer_name}.`);
         }
-        const node = layer.nodes[key];
+        const node = layer.nodes.get(key);
 
         if (layer.rule === null) {
             // An input node.
@@ -76,7 +76,7 @@ export function Database(spec: DatabaseSpec): Database {
                 changed_at: current_revision,
                 verified_at: current_revision,
             };
-            layer.nodes[key] = node;
+            layer.nodes.set(key, node);
             log(`Evaluated ${layer_name}/${key}.`);
             return node;
         }
@@ -142,23 +142,23 @@ export function Database(spec: DatabaseSpec): Database {
     }
 
     function set_value(layer_name: string, key: string, value: unknown): void {
-        const layer = layers[layer_name];
+        const layer = layers.get(layer_name);
         if (layer === undefined) {
             throw Error(`Setting value for unknown layer ${layer_name}.`);
         }
 
-        const node = layer.nodes[key];
+        const node = layer.nodes.get(key);
         if (node !== undefined && deepEqual(value, node.value, {strict: true})) {
             return;
         }
 
         current_revision += 1;
-        layer.nodes[key] = {
+        layer.nodes.set(key, {
             value: value,
             dependencies: [],
             changed_at: current_revision,
             verified_at: current_revision,
-        };
+        });
     }
 
     return {get_value, set_value};
