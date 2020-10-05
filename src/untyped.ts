@@ -33,6 +33,7 @@ type RuleNode = Node & {
 }
 
 type InputLayer = {
+    rule: null;
     nodes: Map<string, InputNode>;
 }
 
@@ -42,17 +43,16 @@ type RuleLayer = {
 }
 
 export function Database(spec: DatabaseSpec): Database {
-    const input_layers = new Map<string, InputLayer>();
-    const rule_layers = new Map<string, RuleLayer>();
+    const layers = new Map<string, InputLayer | RuleLayer>();
     let current_revision: Revision = 0;
     const enable_logging = false;
 
     for (const layer in spec) {
         const rule = spec[layer];
         if (rule === null) {
-            input_layers.set(layer, {nodes: new Map<string, InputNode>()});
+            layers.set(layer, {rule: null, nodes: new Map<string, InputNode>()});
         } else {
-            rule_layers.set(layer, {rule, nodes: new Map<string, RuleNode>()});
+            layers.set(layer, {rule, nodes: new Map<string, RuleNode>()});
         }
     }
 
@@ -63,36 +63,34 @@ export function Database(spec: DatabaseSpec): Database {
     }
 
     function update_node({layer: layer_name, key}: NodeId): Node {
-        const input_layer = input_layers.get(layer_name);
-        if (input_layer !== undefined) {
-            const node = input_layer.nodes.get(key);
+        const layer = layers.get(layer_name);
+        if (layer === undefined) {
+            throw Error(`Updating value for unknown layer ${layer_name}.`);
+        }
+
+        if (layer.rule === null) {
+            const node = layer.nodes.get(key);
             // An input node.
             if (node === undefined) {
-                throw Error(`Getting value for unset input ${layer_name}/${key}.`);
+                throw Error(`Updating value for unset input node ${layer_name}/${key}.`);
             }
             log(`Accessing input ${layer_name}/${key}.`)
             return node;
         }
 
-        const rule_layer = rule_layers.get(layer_name);
-        if (rule_layer === undefined) {
-            // An unknown layer.
-            throw Error(`Getting value for unknown layer ${layer_name}.`);
-        }
-
-        const node = rule_layer.nodes.get(key);
+        const node = layer.nodes.get(key);
         if (node === undefined) {
             // A rule node that is computed for the first time.
             log(`Evaluating ${layer_name}/${key} for the first time...`);
             const reader = get_traced_reader();
-            const value = rule_layer.rule(reader, key);
+            const value = layer.rule(reader, key);
             const node: RuleNode = {
                 value: value,
                 dependencies: reader.trace(),
                 changed_at: current_revision,
                 verified_at: current_revision,
             };
-            rule_layer.nodes.set(key, node);
+            layer.nodes.set(key, node);
             log(`Evaluated ${layer_name}/${key}.`);
             return node;
         }
@@ -123,7 +121,7 @@ export function Database(spec: DatabaseSpec): Database {
         // A rule node whose inputs have changed.
         log(`Re-evaluating ${layer_name}/${key}...`);
         const reader = get_traced_reader();
-        const value = rule_layer.rule(reader, key);
+        const value = layer.rule(reader, key);
         node.dependencies = reader.trace();
         node.verified_at = current_revision;
 
@@ -158,18 +156,21 @@ export function Database(spec: DatabaseSpec): Database {
     }
 
     function set_value(layer_name: string, key: string, value: unknown): void {
-        const input_layer = input_layers.get(layer_name);
-        if (input_layer === undefined) {
+        const layer = layers.get(layer_name);
+        if (layer === undefined) {
             throw Error(`Setting value for unknown layer ${layer_name}.`);
         }
+        if (layer.rule !== null) {
+            throw Error(`Setting value for rule node ${layer_name}/${key}.`);
+        }
 
-        const node = input_layer.nodes.get(key);
+        const node = layer.nodes.get(key);
         if (node !== undefined && deepEqual(value, node.value, {strict: true})) {
             return;
         }
 
         current_revision += 1;
-        input_layer.nodes.set(key, {
+        layer.nodes.set(key, {
             value: value,
             changed_at: current_revision,
         });

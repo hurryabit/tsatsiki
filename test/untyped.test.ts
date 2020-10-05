@@ -46,7 +46,7 @@ describe("inputs", function () {
     test("reading before setting throws", function () {
         const db = TracedDatabase(spec);
 
-        expect(() => db.get_value(FILE_CONTENTS, "x.dat")).toThrow("Getting value for unset input");
+        expect(() => db.get_value(FILE_CONTENTS, "x.dat")).toThrow("Updating value for unset input node FILE_CONTENTS/x.dat");
     });
 
     test("first setting is persisted", function () {
