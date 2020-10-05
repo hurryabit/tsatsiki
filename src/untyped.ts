@@ -47,7 +47,7 @@ export function Database(spec: DatabaseSpec): Database {
         }
     }
 
-    function eval_node({layer: layer_name, key}: NodeId): Pick<Node, "value" | "changed_at"> {
+    function update_node({layer: layer_name, key}: NodeId): Pick<Node, "value" | "changed_at"> {
         const layer = layers.get(layer_name);
         if (layer === undefined) {
             // An unknown node type.
@@ -55,17 +55,11 @@ export function Database(spec: DatabaseSpec): Database {
         }
         const node = layer.nodes.get(key);
 
-        if (layer.rule === null) {
-            // An input node.
-            if (node === undefined) {
+        if (node === undefined) {
+            if (layer.rule === null) {
                 throw Error(`Getting value for unset input ${layer_name}/${key}.`);
             }
-            log(`Accessing input ${layer_name}/${key}.`)
-            node.verified_at = current_revision;
-            return node;
-        }
 
-        if (node === undefined) {
             // A rule node that is computed for the first time.
             log(`Evaluating ${layer_name}/${key} for the first time...`);
             const reader = get_traced_reader();
@@ -82,15 +76,22 @@ export function Database(spec: DatabaseSpec): Database {
         }
 
         if (node.verified_at === current_revision) {
-            // A rule node that has already been verified since the last change.
+            // A node that has already been verified since the last change.
             log(`Taking ${layer_name}/${key} from cache because is has been verified already.`);
+            return node;
+        }
+
+        if (layer.rule === null) {
+            // An input node.
+            log(`Accessing input ${layer_name}/${key}.`)
+            node.verified_at = current_revision;
             return node;
         }
 
         // A rule node that has not yet been verified since the last change.
         let inputs_changed = false;
         for (const dep_node_id of node.dependencies) {
-            const dep_node = eval_node(dep_node_id);
+            const dep_node = update_node(dep_node_id);
             if (dep_node.changed_at > node.verified_at) {
                 inputs_changed = true;
                 break;
@@ -125,7 +126,7 @@ export function Database(spec: DatabaseSpec): Database {
     }
 
     function get_value(layer: string, key: string): unknown {
-        return eval_node({layer, key}).value;
+        return update_node({layer, key}).value;
     }
 
     function get_traced_reader(): DatabaseReader & {trace(): NodeId[]} {
